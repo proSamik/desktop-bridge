@@ -26,6 +26,7 @@ export function panelUrl(remote?: string): string | undefined {
 
 const firstFile = (...ps: string[]) => ps.find((p) => { try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; } });
 const TERMINAL_NOTIFIER = IS_DARWIN ? firstFile("/opt/homebrew/bin/terminal-notifier", "/usr/local/bin/terminal-notifier") : undefined;
+let tnBrokenUntil = 0;
 
 /**
  * Desktop notification; clicking it opens `url` (the admin panel) where the platform allows.
@@ -37,13 +38,15 @@ const TERMINAL_NOTIFIER = IS_DARWIN ? firstFile("/opt/homebrew/bin/terminal-noti
 export function notify(title: string, message: string, url?: string) {
   const msg = message.slice(0, 240);
   if (IS_DARWIN) {
-    if (TERMINAL_NOTIFIER) {
+    const plain = () => execFile("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run", title, msg], () => {});
+    if (TERMINAL_NOTIFIER && Date.now() > tnBrokenUntil) {
       const args = ["-title", title, "-message", msg.replace(/^[-\[\\]/, " $&")];
       if (url) args.push("-open", url);
-      execFile(TERMINAL_NOTIFIER, args, () => {});
+      // terminal-notifier exits non-zero when macOS refuses it permission (e.g. newer macOS): fall back, retry in an hour.
+      execFile(TERMINAL_NOTIFIER, args, { timeout: 15_000 }, (err) => { if (err) { tnBrokenUntil = Date.now() + 3600_000; plain(); } });
       return;
     }
-    execFile("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run", title, msg], () => {});
+    plain();
     return;
   }
   if (IS_WIN) {
