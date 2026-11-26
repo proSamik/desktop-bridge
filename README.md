@@ -72,7 +72,9 @@ offline, the others keep serving; only approving *new* connections waits for the
 - **Guarded profile** (optional): regex hard-deny list + a tool-less Claude reviewer before every run, strict MCP
   allowlist, appended policy prompt, config tamper detection.
 - **Audit log** of every request (time, client, token, IP, CF-Ray, user agent, tool, status, prompt).
-- **Origin IP allowlist** on `CF-Connecting-IP`, per-client rate limit, global kill switch, alerts + notifications.
+- **Origin IP allowlist** on `CF-Connecting-IP`, per-client rate limit, global kill switch.
+- **Alerts + desktop notifications** (new client, connection request, new IP, held or refused run) for the local machine
+  and every remote; clicking one opens the admin panel on that machine's tab (see each platform section).
 
 ## Roles: profile and admin style
 Two independent settings in `.env`:
@@ -120,6 +122,8 @@ desktop-bridge open                    # admin panel at http://127.0.0.1:8788
 ```
 - Secrets live in the **Keychain** (service `$MB_KEYCHAIN_SERVICE`, default `desktop-bridge`).
 - While a run is active the Mac is kept awake with `caffeinate -i -s` (AC power).
+- Clickable notifications: `brew install terminal-notifier` (picked up automatically, no restart needed). Without it,
+  notifications still appear, but macOS ties AppleScript notifications to Script Editor, so a click can't open the panel.
 - Logs: `data/logs/*.log`. CLI: `desktop-bridge open|status|restart|logs|kill on|off`.
 - Optional launcher app: `osacompile -o ~/Applications/"Desktop Bridge.app" -e 'do shell script "$HOME/.local/bin/desktop-bridge open"'`.
 
@@ -134,6 +138,8 @@ sudo loginctl enable-linger "$USER"    # once: keep it running without a login s
 - Tunnel: either `deploy/linux/install.sh --tunnel` (token-run user service) or add a rule to an existing
   system `cloudflared` (see [Cloudflare Tunnel → option B](#option-b-add-a-hostname-to-an-existing-tunnel)).
 - Headless boxes work: everything is CLI; the consent page opens in *your* browser, not on the server.
+- Notifications (panel machines with a desktop): `notify-send` (libnotify). With libnotify 0.7.9+ they get an
+  **Open admin panel** button that runs `xdg-open`; older versions show a plain notification. Headless: skipped.
 - Logs: `journalctl --user -u desktop-bridge -f`. CLI: `desktop-bridge status|restart|logs|kill on|off`.
 
 ## Windows
@@ -150,6 +156,7 @@ cloudflared service install <TUNNEL_TOKEN>                               # tunne
 - To reach a Windows machine's admin API from a panel machine, enable the built-in **OpenSSH Server** and use the
   SSH forward below, or put both machines on Tailscale and use the Tailscale IP with the same port forward.
 - Sleep: set *Power & sleep → Never* while plugged in if the machine must stay reachable.
+- Notifications are Windows toasts (built-in PowerShell, nothing to install); clicking one opens the admin panel.
 
 ## Making one machine the admin panel
 Pick one machine with `MB_ADMIN_UI=panel` (it can also run jobs itself). Every other machine uses `MB_ADMIN_UI=api`.

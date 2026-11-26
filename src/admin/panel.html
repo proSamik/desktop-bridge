@@ -228,6 +228,9 @@ window.saveCfg = async (n) => { if (!confirm('Save ' + n + '?')) return; await a
 
 async function loadNodes() {
   try { const r = await fetch('/api/remotes'); if (r.ok) { const j = await r.json(); NODES = { local: j.local, remotes: j.remotes }; } } catch (e) {}
+  // Notifications link to #remote=<name>: open that machine's tab on the Overview page.
+  const h = /^#remote=([A-Za-z0-9-]+)$/.exec(location.hash);
+  if (h && NODES.remotes.includes(h[1])) { TARGET = h[1]; TAB = 'overview'; try { localStorage.setItem('mb_target', TARGET); } catch (e) {} history.replaceState(null, '', location.pathname); }
   if (TARGET !== 'local' && !NODES.remotes.includes(TARGET)) TARGET = 'local';
 }
 (async () => { const me = await (await fetch('/api/me')).json(); if (me.authed) { CSRF = me.csrf; await loadNodes(); shell(); } else renderLogin(); })();

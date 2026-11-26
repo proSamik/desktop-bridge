@@ -3,7 +3,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import fs from "node:fs";
 import { BIND, MCP_PORT, ADMIN_PORT, IS_PANEL, GUARDED, REMOTES, NODE_NAME, remoteKeyName, kcGet, ALLOWED_MCP_PATH, POLICY_PATH, ALLOWED_MCP_EXAMPLE, POLICY_EXAMPLE, CONFIG_DIR } from "./config.js";
 import { db, now, getSetting } from "./db.js";
-import { clientIp, ipAllowed, notify, pinConfigHashes } from "./util.js";
+import { clientIp, ipAllowed, notify, pinConfigHashes, panelUrl } from "./util.js";
 import { oauthRouter, requireBearer, base, type AuthedRequest } from "./oauth/router.js";
 import { buildMcpServer } from "./mcp.js";
 import { adminApp } from "./admin/router.js";
@@ -136,7 +136,7 @@ for (const remote of REMOTES) {
       if (!r.ok) return;
       const alerts = (await r.json()) as { id: number; message: string }[];
       const fresh = alerts.filter((a) => a.id > seen).sort((a, b) => a.id - b.id);
-      for (const a of fresh.slice(-3)) notify(`desktop-bridge (${remote.name})`, a.message);
+      for (const a of fresh.slice(-3)) notify(`desktop-bridge (${remote.name})`, a.message, panelUrl(remote.name));
       if (fresh.length) {
         seen = fresh[fresh.length - 1].id;
         db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k, String(seen));
