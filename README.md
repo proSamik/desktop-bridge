@@ -223,8 +223,11 @@ cloudflared tunnel route dns <existing-tunnel-id> <host.your-domain>
 ### Who can reach it
 - The bridge itself enforces an **IP allowlist** on `CF-Connecting-IP` (panel → Settings → IP allowlist).
   Default: Anthropic's outbound ranges `160.79.104.0/21, 153.61.208.0/20`
-  ([source](https://platform.claude.com/docs/en/api/ip-addresses)). Add your own IP if your browser must open the
-  consent page through the tunnel (it must, during connector setup). Cloudflare overwrites any client-sent
+  ([source](https://platform.claude.com/docs/en/api/ip-addresses)). The browser-facing consent page
+  (`GET /authorize` + its status poll) is the one exception: it opens from **any** network, so you can add a connector
+  from home, a phone hotspot or anywhere, then click **Approve** in the admin panel. From a non-allowlisted IP the page
+  only shows "Waiting for approval" (the password form appears only on allowlisted IPs), and `/mcp`, `/register`,
+  `/token` stay allowlisted. Add your own IP only if you want the password form on the consent page. Cloudflare overwrites any client-sent
   `CF-Connecting-IP`, so it cannot be spoofed through the tunnel.
 - Optional edge rule (blocks before traffic reaches you): `CLOUDFLARE_API_TOKEN=<token with Zone WAF:Edit> node scripts/cloudflare-waf.mjs --hostname <host> --allow "<your-ip>"`.
 - Don't open a new hostname before its DNS record exists: resolvers (including 1.1.1.1) cache the miss for up to 30 min.
@@ -232,8 +235,8 @@ cloudflared tunnel route dns <existing-tunnel-id> <host.your-domain>
 ## Connect it to Claude
 1. Claude → Settings → Connectors → **Add custom connector** → `https://<host.your-domain>/mcp`.
 2. Claude registers a client (it shows up as **pending** + notification) and opens the consent page in your browser.
-3. Approve: password + 6-digit code on the consent page (panel machine), or **Approve** under *Connection requests
-   waiting* in the panel (works for every machine). The page continues by itself.
+3. Approve: **Approve** under *Connection requests waiting* in the admin panel (works from any network and for every
+   machine), or password + 6-digit code on the consent page (panel machine, allowlisted IPs only). The page continues by itself.
 4. Use one connector per machine; each has its own URL, clients and tokens.
 
 ## MCP tools
@@ -305,7 +308,7 @@ notifications that link to its temporary port), then `MB_ROOT=/tmp/bridge-test M
 | Symptom | Fix |
 |---|---|
 | Browser: "can't find the server" | DNS not created yet or a cached miss: check `dig @8.8.8.8 <host>`; wait ≤30 min or flush the local DNS cache. |
-| `403` on the consent page | Your IP is not in the allowlist (panel → Settings → IP allowlist). |
+| Consent page says "Waiting for approval" | You're on a non-allowlisted network: click **Approve** in the admin panel (or add your IP for the password form). |
 | `401 invalid_token` in a browser at `/mcp` | Expected: `/mcp` needs a bearer token; only MCP clients use it. |
 | Panel tab shows "unreachable" | The SSH forward to that remote is down: check the forward service and `ssh <host>` without a password. |
 | Runs fail immediately | `data/runs/<id>.stderr.log`; check `claude` / `codex` are logged in for the service user. |

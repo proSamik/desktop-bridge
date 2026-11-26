@@ -14,6 +14,12 @@ export function safeEqual(a: string, b: string) {
   return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
 }
 
+/** True for local (non-tunneled) requests and for tunneled requests from an allowlisted IP. */
+export function trustedIp(req: Request): boolean {
+  const tunneled = !!(req.header("cf-ray") || req.header("cf-connecting-ip"));
+  return !tunneled || ipAllowed(req.header("cf-connecting-ip") || "", getSetting("ip_allowlist"));
+}
+
 /** Real client IP: Cloudflare header when tunneled, socket address otherwise. */
 export function clientIp(req: Request): string {
   return (req.header("cf-connecting-ip") || req.socket.remoteAddress || "").replace(/^::ffff:/, "");

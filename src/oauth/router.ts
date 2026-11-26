@@ -1,8 +1,8 @@
 import crypto from "node:crypto";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { db, now, getSetting } from "../db.js";
-import { ACCESS_TTL_S, REFRESH_TTL_S, IS_PANEL, NODE_NAME, PLATFORM_NAME } from "../config.js";
-import { sha256, randToken, randId, safeEqual, clientIp, alert, trackIp } from "../util.js";
+import { ACCESS_TTL_S, REFRESH_TTL_S, IS_PANEL, NODE_NAME, PLATFORM_NAME, ADMIN_PORT } from "../config.js";
+import { sha256, randToken, randId, safeEqual, clientIp, alert, trackIp, trustedIp } from "../util.js";
 import { checkAdminCredentials } from "../admin/auth.js";
 import { cancelRunsForClient } from "../runs/runner.js";
 
@@ -200,7 +200,7 @@ export function oauthRouter() {
     alert("auth_request", `Authorization request from "${client.name}" at ${ip || "?"}`);
     res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; form-action 'self' https: http://localhost:* http://127.0.0.1:*");
     res.setHeader("X-Frame-Options", "DENY");
-    res.type("html").send(consentPage(rid, client, redirect, ip, String(q.scope || "mcp")));
+    res.type("html").send(consentPage(rid, client, redirect, ip, String(q.scope || "mcp"), undefined, trustedIp(req)));
   });
 
   r.post("/authorize/decision", ...body, (req, res) => {
@@ -212,7 +212,7 @@ export function oauthRouter() {
     const login = checkAdminCredentials(ip, password, totp, "consent page");
     if (!login.ok) {
       const client = db.prepare("SELECT * FROM clients WHERE id=?").get(ar.client_id) as any;
-      return res.status(401).type("html").send(consentPage(ar.id, client, ar.redirect_uri, ar.ip, ar.scope, login.error));
+      return res.status(401).type("html").send(consentPage(ar.id, client, ar.redirect_uri, ar.ip, ar.scope, login.error, true));
     }
     if (decision !== "approve") {
       denyAuthRequest(ar.id);
@@ -325,7 +325,8 @@ button.primary{background:var(--acc);border-color:var(--acc);color:#fff}.err{col
 </style></head><body><div class="card">${body}</div></body></html>`;
 }
 
-function consentPage(rid: string, client: any, redirect: string, ip: string, scope: string, error?: string) {
+/** showLogin: the password + code form, only for allowlisted / local IPs on the panel machine. Everyone else approves in the panel. */
+function consentPage(rid: string, client: any, redirect: string, ip: string, scope: string, error?: string, showLogin = false) {
   return page(
     "Approve connection",
     `<h1>Allow access to ${esc(NODE_NAME)}?</h1>
@@ -334,7 +335,10 @@ function consentPage(rid: string, client: any, redirect: string, ip: string, sco
 <dt>Redirect</dt><dd>${esc(redirect)}</dd><dt>Requesting IP</dt><dd>${esc(ip)}</dd><dt>Scope</dt><dd>${esc(scope)}</dd>
 <dt>Status</dt><dd>${esc(client.status)}</dd></dl>
 ${error ? `<p class="err">${esc(error)}</p>` : ""}
-${!IS_PANEL ? `<p><b>Waiting for approval.</b> Open your admin panel, switch to <b>${esc(NODE_NAME)}</b>, and approve this request. This page continues on its own.</p>` : `<form method="post" action="/authorize/decision" autocomplete="off">
+${!IS_PANEL ? `<p><b>Waiting for approval.</b> Open your admin panel, switch to <b>${esc(NODE_NAME)}</b>, and approve this request. This page continues on its own.</p>`
+  : !showLogin ? `<p><b>Waiting for approval.</b> Open the admin panel on <b>${esc(NODE_NAME)}</b> (http://127.0.0.1:${ADMIN_PORT}) and click <b>Approve</b> under <i>Connection requests waiting</i>. This page continues on its own.</p>
+<p class="mut">The password form is only shown on allowlisted networks.</p>`
+  : `<form method="post" action="/authorize/decision" autocomplete="off">
 <input type="hidden" name="rid" value="${esc(rid)}">
 <label>Admin password<input type="password" name="password" required autocomplete="current-password"></label>
 <label>Authenticator code<input name="totp" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autocomplete="one-time-code"></label>

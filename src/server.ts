@@ -34,9 +34,13 @@ app.use((req, res, next) => {
 });
 
 // IP allowlist for anything arriving through Cloudflare (CF-Connecting-IP is set by Cloudflare's edge and can't be forged through it).
+// Exception: the browser-facing consent page (GET /authorize and its status poll) is reachable from any IP, so you can
+// connect from any network and approve in the admin panel. It only creates a *pending* request; the password form on it
+// is shown only to allowlisted IPs (and POST /authorize/decision stays behind the allowlist).
+const OPEN_PATH = (req: express.Request) => req.method === "GET" && (req.path === "/authorize" || req.path.startsWith("/authorize/status/"));
 app.use((req, res, next) => {
   const tunneled = !!(req.header("cf-ray") || req.header("cf-connecting-ip"));
-  if (!tunneled) return next();
+  if (!tunneled || OPEN_PATH(req)) return next();
   const ip = req.header("cf-connecting-ip") || "";
   if (!ipAllowed(ip, getSetting("ip_allowlist"))) {
     db.prepare("INSERT INTO requests(ts,ip,cf_ray,ua,method,path,status,detail) VALUES(?,?,?,?,?,?,?,?)").run(
