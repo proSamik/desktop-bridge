@@ -1,0 +1,11 @@
+node_modules/
+dist/
+data/
+secrets/
+local/
+.env
+bridge.env
+config/allowed-mcp.json
+config/policy.md
+*.log
+.DS_Store

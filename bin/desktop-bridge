@@ -1,0 +1,27 @@
+#!/bin/sh
+# desktop-bridge control (macOS launchd / Linux systemd --user). Usage: desktop-bridge open|status|restart|logs|kill on|off
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+LABEL="${MB_LABEL:-com.desktop-bridge}"
+ADMIN_PORT="$(grep -E '^MB_ADMIN_PORT=' "$DIR/.env" 2>/dev/null | cut -d= -f2)"; ADMIN_PORT="${ADMIN_PORT:-8788}"
+MCP_PORT="$(grep -E '^MB_MCP_PORT=' "$DIR/.env" 2>/dev/null | cut -d= -f2)"; MCP_PORT="${MCP_PORT:-8787}"
+if [ "$(uname)" = Darwin ]; then
+  U="gui/$(id -u)"
+  case "$1" in
+    open|"") open "http://127.0.0.1:$ADMIN_PORT" ;;
+    status) for s in server tunnel; do printf "%s.%s: " "$LABEL" "$s"; launchctl print "$U/$LABEL.$s" 2>/dev/null | awk '/state =/{print $3; exit}' || echo "not loaded"; done
+            echo "healthz: $(curl -s http://127.0.0.1:$MCP_PORT/healthz)" ;;
+    restart) launchctl kickstart -k "$U/$LABEL.server"; launchctl kickstart -k "$U/$LABEL.tunnel" 2>/dev/null ;;
+    logs) tail -f "$DIR"/data/logs/*.log ;;
+    kill) cd "$DIR" && node dist/admin/ctl.js kill "$2" ;;
+    *) echo "usage: desktop-bridge open|status|restart|logs|kill on|off" ;;
+  esac
+else
+  case "$1" in
+    open|"") echo "admin: http://127.0.0.1:$ADMIN_PORT" ;;
+    status) systemctl --user --no-pager status desktop-bridge | head -5; echo "healthz: $(curl -s http://127.0.0.1:$MCP_PORT/healthz)" ;;
+    restart) systemctl --user restart desktop-bridge ;;
+    logs) journalctl --user -u desktop-bridge -f ;;
+    kill) cd "$DIR" && node dist/admin/ctl.js kill "$2" ;;
+    *) echo "usage: desktop-bridge open|status|restart|logs|kill on|off" ;;
+  esac
+fi

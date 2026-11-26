@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>desktop-bridge admin</title>
+<style>
+:root{color-scheme:light dark;--bg:#f5f5f2;--card:#fff;--fg:#1c1c1a;--mut:#6d6d67;--line:#e3e3de;--acc:#2563eb;--ok:#1f8a4c;--warn:#b7791f;--bad:#c2372f;--chip:#efefea;--add:#e6f6ea;--del:#fbe9e7}
+@media (prefers-color-scheme:dark){:root{--bg:#121211;--card:#1b1b19;--fg:#ececea;--mut:#9b9b94;--line:#2c2c29;--acc:#6aa1ff;--ok:#4cc27e;--warn:#e0a84a;--bad:#ff6b61;--chip:#262623;--add:#173322;--del:#3a1c1a}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,system-ui,sans-serif}
+header{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:2;flex-wrap:wrap}
+header h1{font-size:15px;margin:0;font-weight:650}nav{display:flex;gap:2px;flex-wrap:wrap}
+nav button{background:none;border:0;padding:6px 10px;border-radius:6px;color:var(--mut);font:inherit;cursor:pointer}
+nav button.on{background:var(--chip);color:var(--fg)}.sp{flex:1}
+main{padding:18px 20px;max-width:1300px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.stat b{display:block;font-size:22px;font-variant-numeric:tabular-nums}.stat span{color:var(--mut);font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-weight:500;font-size:12px}td.mono,.mono{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.wrap{overflow-x:auto}.trunc{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button.b{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:6px;padding:4px 9px;font:inherit;font-size:12px;cursor:pointer;margin:1px}
+button.b:hover{border-color:var(--mut)}button.p{background:var(--acc);border-color:var(--acc);color:#fff}button.d{color:var(--bad)}
+.pill{display:inline-block;padding:1px 8px;border-radius:99px;font-size:11px;background:var(--chip)}
+.s-approved,.s-succeeded,.s-allow{color:var(--ok)}.s-pending,.s-queued,.s-awaiting_approval,.s-ask,.s-reviewing,.s-running{color:var(--warn)}
+.s-revoked,.s-failed,.s-denied,.s-deny,.s-cancelled{color:var(--bad)}
+.banner{background:var(--del);border:1px solid var(--bad);border-radius:10px;padding:10px 14px;margin-bottom:14px}
+.banner ul{margin:6px 0 0;padding-left:18px}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:10px 0;border-bottom:1px solid var(--line)}
+.toggle:last-child{border:0}.toggle small{display:block;color:var(--mut)}
+.sw{position:relative;width:44px;height:24px;flex:none}.sw input{opacity:0;width:0;height:0}
+.sw i{position:absolute;inset:0;background:var(--line);border-radius:99px;cursor:pointer;transition:.15s}
+.sw i:before{content:"";position:absolute;width:18px;height:18px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.15s}
+.sw input:checked+i{background:var(--bad)}.sw input:checked+i:before{transform:translateX(20px)}
+input.t,select.t,textarea.t{border:1px solid var(--line);background:transparent;color:inherit;border-radius:6px;padding:6px 8px;font:inherit}
+textarea.t{width:100%;min-height:280px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.diff{font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:pre-wrap;border:1px solid var(--line);border-radius:6px;max-height:300px;overflow:auto}
+.diff div{padding:0 8px}.diff .a{background:var(--add)}.diff .r{background:var(--del)}
+.login{max-width:340px;margin:12vh auto}.login input{width:100%;margin:6px 0 12px}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+pre.log{max-height:60vh;overflow:auto;font-size:11px;background:var(--chip);padding:10px;border-radius:6px;white-space:pre-wrap;word-break:break-all}
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg);width:min(1000px,95vw)}
+.seg{background:var(--chip);border-radius:8px;padding:2px}.seg button.on{background:var(--card)}.ks{font-weight:600}.ks.on{color:var(--bad)}
+@media (max-width:640px){main{padding:12px 16px}header{padding:10px 16px}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<dialog id="dlg"><div id="dlgBody"></div><p><button class="b" onclick="dlg.close()">Close</button></p></dialog>
+<script>
+let CSRF = null, TAB = 'overview', timer = null, lastReq = 0, TARGET = (()=>{try{return localStorage.getItem('mb_target')||'local'}catch(e){return 'local'}})(), NODES = { local: 'this machine', remotes: [] };
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ts = (t) => t ? new Date(t*1000).toLocaleString() : '—';
+const ago = (t) => { if(!t) return '—'; const s = Math.floor(Date.now()/1000)-t; return s<60?s+'s ago':s<3600?Math.floor(s/60)+'m ago':s<86400?Math.floor(s/3600)+'h ago':Math.floor(s/86400)+'d ago'; };
+const pill = (s) => `<span class="pill s-${esc(s)}">${esc(s)}</span>`;
+
+async function api(path, body) {
+  const r = await fetch('/api' + (TARGET === 'local' ? '' : '/remote/' + encodeURIComponent(TARGET)) + path, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json', 'x-mb-csrf': CSRF || '' }, body: JSON.stringify(body) });
+  if (r.status === 401 && !(TARGET !== 'local' && r.headers.get('content-type')?.includes('json') && (await r.clone().json()).error === 'bad admin key')) { CSRF = null; renderLogin(); throw new Error('login'); }
+  const j = await r.json(); if (!r.ok) { if (body !== undefined) alert(j.error || 'error'); throw new Error(j.error || r.status); } return j;
+}
+
+function renderLogin(err) {
+  clearInterval(timer);
+  $('#app').innerHTML = `<div class="card login"><h1 style="font-size:17px;margin:0 0 12px">desktop-bridge admin</h1>
+  ${err ? `<p class="s-denied">${esc(err)}</p>` : ''}
+  <form id="lf"><label>Password<input class="t" type="password" name="password" autocomplete="current-password" required autofocus></label>
+  <label>Authenticator code<input class="t" name="totp" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required></label>
+  <button class="b p" style="width:100%;padding:8px">Sign in</button></form></div>`;
+  $('#lf').onsubmit = async (e) => {
+    e.preventDefault(); const f = new FormData(e.target);
+    const r = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ password: f.get('password'), totp: f.get('totp') }) });
+    const j = await r.json(); if (!r.ok) return renderLogin(j.error); CSRF = j.csrf; await loadNodes(); shell();
+  };
+}
+
+const TABS = [['overview','Overview'],['clients','Clients'],['tokens','Tokens'],['requests','Requests'],['runs','Runs'],['settings','Settings']];
+function shell() {
+  $('#app').innerHTML = `<header><h1>desktop-bridge</h1><nav class="seg">${[['local', NODES.local + ' (this)'], ...NODES.remotes.map(r => [r, r])].map(([k, l]) => `<button data-g="${esc(k)}">${esc(l)}</button>`).join('')}</nav><span style="width:8px"></span><nav>${TABS.map(([k,l]) => `<button data-t="${k}">${l}</button>`).join('')}</nav>
+  <div class="sp"></div><span id="ksBadge" class="ks"></span><button class="b" id="lo">Sign out</button></header><main><div id="alerts"></div><div id="view"></div></main>`;
+  document.querySelectorAll('nav button[data-t]').forEach(b => b.onclick = () => go(b.dataset.t));
+  document.querySelectorAll('nav button[data-g]').forEach(b => b.onclick = () => { TARGET = b.dataset.g; try{localStorage.setItem('mb_target', TARGET)}catch(e){} go(TAB); });
+  $('#lo').onclick = async () => { await fetch('/api/logout', { method: 'POST', headers: { 'x-mb-csrf': CSRF || '' } }); CSRF = null; renderLogin(); };
+  go(TAB);
+}
+function go(t) {
+  TAB = t; lastReq = 0;
+  document.querySelectorAll('nav button[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  document.querySelectorAll('nav button[data-g]').forEach(b => b.classList.toggle('on', b.dataset.g === TARGET));
+  clearInterval(timer); refresh(true); timer = setInterval(() => refresh(false), t === 'settings' ? 15000 : 3000);
+}
+async function refresh(full) {
+  try {
+    const [alerts, ov] = await Promise.all([api('/alerts'), api('/overview')]);
+    $('#ksBadge').textContent = (TARGET === 'local' ? NODES.local : TARGET) + ' ' + (ov.kill_switch ? '● KILL SWITCH ON' : '● live'); $('#ksBadge').className = 'ks' + (ov.kill_switch ? ' on' : '');
+    $('#alerts').innerHTML = alerts.length ? `<div class="banner"><b>${alerts.length} alert${alerts.length>1?'s':''}</b> <button class="b" onclick="ack()">Dismiss all</button>
+      <ul>${alerts.slice(0,8).map(a => `<li>${esc(a.message)} <span class="pill">${ago(a.ts)}</span></li>`).join('')}</ul></div>` : '';
+    if (TAB === 'settings' && !full) return;
+    await VIEWS[TAB](ov, full);
+  } catch (e) { if (TARGET !== 'local' && !String(e.message).includes('login')) $('#view').innerHTML = `<div class="card s-denied">${esc(TARGET)} unreachable: ${esc(e.message)}</div>`; }
+}
+window.ack = async () => { await api('/alerts/ack', {}); refresh(false); };
+const act = async (path, body = {}, confirmMsg) => { if (confirmMsg && !confirm(confirmMsg)) return; await api(path, body); refresh(true); };
+window.act = act;
+
+const VIEWS = {
+  async overview(ov) {
+    const auth = await api('/auth-requests');
+    const runs = (await api('/runs')).filter(r => r.status === 'awaiting_approval');
+    $('#view').innerHTML = `
+    <div class="card"><div class="toggle"><div><b>Kill switch</b><small>Blocks every MCP call and stops queued and running jobs.</small></div>
+      <label class="sw"><input type="checkbox" ${ov.kill_switch?'checked':''} onchange="setKill(this.checked)"><i></i></label></div></div>
+    <div class="grid">
+      ${[['Active runs', `${(ov.active_runs || []).length} / ${ov.max_concurrent_runs ?? 1}`],['Queued', ov.queued],['Awaiting you', ov.awaiting],['Pending clients', ov.pending_clients],['Requests 24h', ov.requests_24h],['Runs 24h', ov.runs_24h],['Permission mode', ov.permission_mode],['Config intact', ov.config_ok ? 'yes' : 'NO']]
+        .map(([l,v]) => `<div class="card stat"><b class="${l==='Config intact'&&!ov.config_ok?'s-denied':''}" style="${String(v).length>10?'font-size:14px':''}">${esc(v)}</b><span>${l}</span></div>`).join('')}
+    </div>
+    ${auth.length ? `<div class="card"><h3 style="margin-top:0">Connection requests waiting</h3><table><tr><th>Client</th><th>Redirect</th><th>IP</th><th>When</th><th></th></tr>
+      ${auth.map(a => `<tr><td>${esc(a.client_name)}<br><span class="mono">${esc(a.client_id)}</span></td><td class="mono">${esc(a.redirect_uri)}</td><td class="mono">${esc(a.ip)}</td><td>${ago(a.created_at)}</td>
+      <td><button class="b p" onclick="act('/auth-requests/${a.id}/approve',{},'Approve ${esc(a.client_name)} and issue tokens?')">Approve</button><button class="b d" onclick="act('/auth-requests/${a.id}/deny')">Deny</button></td></tr>`).join('')}</table></div>` : ''}
+    ${runs.length ? `<div class="card"><h3 style="margin-top:0">Runs held for review</h3>${runTable(runs)}</div>` : ''}
+    <div class="card mono">Public MCP URL: ${esc(ov.public_base_url)}/mcp</div>`;
+  },
+  async clients() {
+    const cs = await api('/clients');
+    $('#view').innerHTML = `<div class="card wrap"><table><tr><th>Name</th><th>Status</th><th>First / last seen</th><th>IPs</th><th>Tokens</th><th>Redirect</th><th></th></tr>
+    ${cs.map(c => `<tr><td><b>${esc(c.name)}</b> ${c.is_mine?'<span class="pill">mine</span>':''}<br><span class="mono">${esc(c.id)}</span><br><small>registered ${ts(c.created_at)} from ${esc(c.reg_ip)}</small></td>
+      <td>${pill(c.status)}</td><td>${ts(c.first_seen)}<br>${ago(c.last_seen)}</td><td class="mono">${c.ips.map(esc).join('<br>')||'—'}</td><td>${c.active_tokens}</td>
+      <td class="mono trunc" title="${esc(c.redirect_uris.join(' '))}">${esc(c.redirect_uris.join(' '))}</td>
+      <td>${c.status==='pending'?`<button class="b p" onclick="act('/clients/${c.id}/approve')">Approve</button>`:''}
+      <button class="b" onclick="rename('${c.id}','${esc(c.name)}')">Rename</button>
+      <button class="b" onclick="act('/clients/${c.id}/mine',{mine:${c.is_mine?0:1}})">${c.is_mine?'Unmark':'Mark as mine'}</button>
+      ${c.status!=='revoked'?`<button class="b d" onclick="act('/clients/${c.id}/revoke',{},'Revoke ${esc(c.name)}? Kills its tokens and runs.')">Revoke</button>`:''}</td></tr>`).join('') || '<tr><td colspan=7>No clients yet.</td></tr>'}</table></div>`;
+  },
+  async tokens() {
+    const ts_ = await api('/tokens');
+    $('#view').innerHTML = `<div class="card wrap"><table><tr><th>Client</th><th>Kind</th><th>Token id</th><th>Created</th><th>Expires</th><th>Last use</th><th></th></tr>
+    ${ts_.map(t => `<tr><td>${esc(t.client_name)}</td><td>${esc(t.kind)}</td><td class="mono">${esc(t.id)}</td><td>${ts(t.created_at)}</td><td>${ts(t.expires_at)}</td><td>${ago(t.last_used)}</td>
+      <td><button class="b d" onclick="act('/tokens/${t.id}/revoke',{},'Revoke this token and its refresh chain?')">Revoke</button></td></tr>`).join('') || '<tr><td colspan=7>No active tokens.</td></tr>'}</table></div>`;
+  },
+  async requests(_ov, full) {
+    if (full) {
+      $('#view').innerHTML = `<div class="card"><div class="filters">
+        <input class="t" id="fq" placeholder="search prompt / path / UA"><input class="t" id="fip" placeholder="IP"><input class="t" id="ftool" placeholder="tool">
+        <select class="t" id="fst"><option value="">any status</option><option value="error">errors (4xx/5xx)</option><option>200</option><option>401</option><option>403</option><option>503</option></select>
+        <button class="b" onclick="go('requests')">Apply</button></div><div class="wrap"><table id="rt"><tr><th>Time</th><th>Client</th><th>IP</th><th>CF-Ray</th><th>Request</th><th>Tool</th><th>Status</th><th>Detail / prompt</th></tr></table></div></div>`;
+      ['fq','fip','ftool','fst'].forEach(id => { const el = $('#'+id); el.value = sessionStorage.getItem(id) || ''; el.onchange = () => { sessionStorage.setItem(id, el.value); go('requests'); }; });
+    }
+    const p = new URLSearchParams({ q: $('#fq').value, ip: $('#fip').value, tool: $('#ftool').value, status: $('#fst').value, since_id: lastReq });
+    [...p.keys()].forEach(k => !p.get(k) && p.delete(k));
+    const rows = await api('/requests?' + p);
+    if (rows.length) lastReq = rows[0].id;
+    const html = rows.map(r => `<tr><td>${ts(r.ts)}</td><td>${esc(r.client_name||r.client_id||'—')}</td><td class="mono">${esc(r.ip)}</td><td class="mono">${esc(r.cf_ray||'')}</td>
+      <td class="mono">${esc(r.method)} ${esc(r.path)}<br><small class="trunc" style="display:block">${esc(r.ua)}</small></td><td>${esc(r.tool||'')}</td>
+      <td class="${r.status>=400?'s-denied':''}">${r.status}</td><td class="mono" style="max-width:420px;word-break:break-word">${esc((r.detail||'').slice(0,600))}</td></tr>`).join('');
+    $('#rt tbody').insertAdjacentHTML('afterbegin', '');
+    const hdr = $('#rt tr'); hdr.insertAdjacentHTML('afterend', html);
+  },
+  async runs() {
+    $('#view').innerHTML = `<div class="card wrap">${runTable(await api('/runs'))}</div>`;
+  },
+  async settings() {
+    const s = await api('/settings');
+    const [am, po] = s.profile === 'open' ? [{content:'',intact:true},{content:'',intact:true}] : await Promise.all([api('/config/allowed-mcp'), api('/config/policy')]);
+    window._orig = { 'allowed-mcp': am.content, policy: po.content };
+    $('#view').innerHTML = `
+    <div class="card">
+      <div class="toggle"><div><b>Kill switch</b><small>Blocks all MCP calls and stops runs.</small></div><label class="sw"><input type="checkbox" ${s.kill_switch?'checked':''} onchange="setKill(this.checked)"><i></i></label></div>
+      <div class="toggle"><div><b>Permission mode</b><small>Passed to claude --permission-mode. bypassPermissions skips every prompt.</small></div>
+        <select class="t" onchange="setMode(this)">${s.permission_modes.map(m => `<option ${m===s.permission_mode?'selected':''}>${m}</option>`).join('')}</select></div>
+      <div class="toggle"><div><b>Codex sandbox</b><small>codex exec sandbox. danger-full-access = --dangerously-bypass-approvals-and-sandbox.</small></div>
+        <select class="t" onchange="saveSet({codex_sandbox:this.value})">${s.codex_sandboxes.map(m => `<option ${m===s.codex_sandbox?'selected':''}>${m}</option>`).join('')}</select></div>
+      <div class="toggle"><div><b>Max concurrent runs</b><small>Runs executing at the same time (1-10). Extra runs queue.${s.max_concurrent_env_override ? ' Overridden by MB_MAX_CONCURRENT_RUNS in .env.' : ''}</small></div>
+        <span><input class="t" id="mcr" type="number" min="1" max="10" value="${s.max_concurrent_runs}" style="width:70px" ${s.max_concurrent_env_override ? 'disabled' : ''}> <button class="b" onclick="saveSet({max_concurrent_runs:+$('#mcr').value})" ${s.max_concurrent_env_override ? 'disabled' : ''}>Save</button></span></div>
+      ${s.profile === 'open' ? '' : `<div class="toggle"><div><b>Allow subagents</b><small>Adds the Task/Agent tool to guarded Claude runs. Subagents get the same tool limits.</small></div>
+        <label class="sw" style="--on:var(--acc)"><input type="checkbox" ${s.allow_subagents ? 'checked' : ''} onchange="saveSet({allow_subagents:this.checked})"><i></i></label></div>`}
+      <div class="toggle"><div><b>Rate limit</b><small>Runs per client per hour.</small></div><span><input class="t" id="rl" type="number" min="0" value="${s.rate_limit_per_hour}" style="width:90px"> <button class="b" onclick="saveSet({rate_limit_per_hour:+$('#rl').value})">Save</button></span></div>
+      ${s.profile === 'open' ? '' : `<div class="toggle"><div><b>Review model</b><small>Model for the tool-less intent reviewer.</small></div><span><input class="t" id="rm" value="${esc(s.review_model)}" style="width:120px"> <button class="b" onclick="saveSet({review_model:$('#rm').value})">Save</button></span></div>`}
+      <div class="toggle"><div><b>IP allowlist</b><small>Tunneled requests from other IPs get 403. Anthropic outbound ranges + your IPs.</small></div><span><input class="t" id="ipl" value="${esc(s.ip_allowlist)}" style="width:300px"> <button class="b" onclick="saveSet({ip_allowlist:$('#ipl').value})">Save</button></span></div>
+      ${s.ui === 'api' ? '' : `<div class="toggle"><div><b>Cloudflare API token</b><small id="cfst">Stored in the secret store. Optional; only scripts/cloudflare-waf.mjs uses it (Zone WAF Edit).</small></div><span><input class="t" id="cft" type="password" placeholder="paste token" style="width:220px" autocomplete="off"> <button class="b p" onclick="saveCf()">Save</button></span></div>`}
+      <div class="toggle"><div><b>Public base URL</b><small>OAuth issuer and resource. Must match the tunnel hostname.</small></div><span><input class="t" id="pu" value="${esc(s.public_base_url)}" style="width:300px"> <button class="b" onclick="saveSet({public_base_url:$('#pu').value})">Save</button></span></div>
+    </div>
+    ${(s.profile === 'open' ? [] : ['allowed-mcp','policy']).map(n => `<div class="card"><h3 style="margin-top:0">${n === 'policy' ? 'config/policy.md' : 'config/allowed-mcp.json'} ${({ 'allowed-mcp': am, policy: po })[n].intact ? '' : '<span class="pill s-denied">changed outside panel</span> <button class="b" onclick="act(\'/config-accept\',{},\'Accept the files as they are on disk now?\')">Accept on-disk version</button>'}</h3>
+      <textarea class="t" id="ed-${n}" spellcheck="false">${esc(window._orig[n])}</textarea>
+      <p><button class="b" onclick="preview('${n}')">Preview diff</button></p><div id="pv-${n}"></div></div>`).join('')}`;
+  },
+};
+
+function runTable(rs) {
+  return `<table><tr><th>Run</th><th>Client</th><th>Status</th><th>Review</th><th>Prompt</th><th>Duration</th><th>Cost</th><th>Session</th><th></th></tr>
+  ${rs.map(r => `<tr><td class="mono">${esc(r.id)}<br><span class="pill">${esc(r.engine||'claude')}</span> <small>${ts(r.created_at)}</small></td><td>${esc(r.client_name||'')}<br><small class="mono">${esc(r.ip||'')}</small></td><td>${pill(r.status)}${r.error?`<br><small>${esc(r.error)}</small>`:''}</td>
+    <td>${pill(r.verdict||'')}<br><small>${esc(r.verdict_stage||'')}: ${esc((r.verdict_reason||'').slice(0,160))}</small></td>
+    <td style="max-width:320px;word-break:break-word">${esc(r.prompt.slice(0,300))}<br><small class="mono">${esc(r.cwd)}</small></td>
+    <td>${r.duration_ms!=null?(r.duration_ms/1000).toFixed(1)+'s':'—'}</td><td>${r.cost_usd!=null?'$'+r.cost_usd.toFixed(4):'—'}</td><td class="mono">${esc(r.session_id||'')}</td>
+    <td>${r.status==='awaiting_approval'?`<button class="b p" onclick="act('/runs/${r.id}/approve',{},'Run this prompt with full access?')">Approve</button><button class="b d" onclick="act('/runs/${r.id}/reject')">Reject</button>`:''}
+    ${['queued','running','reviewing'].includes(r.status)?`<button class="b d" onclick="act('/runs/${r.id}/cancel',{},'Cancel this run?')">Cancel</button>`:''}
+    <button class="b" onclick="showLog('${r.id}')">Log</button></td></tr>`).join('') || '<tr><td colspan=9>No runs yet.</td></tr>'}</table>`;
+}
+
+window.setKill = async (on) => { if (on && !confirm('Turn on the kill switch? Running jobs will be stopped.')) return refresh(true); await api('/settings', { kill_switch: on }); refresh(true); };
+window.setMode = async (el) => { if (el.value === 'bypassPermissions' && !confirm('bypassPermissions lets runs use any tool without checks. Enable?')) return refresh(true); await api('/settings', { permission_mode: el.value }); };
+window.saveCf = async () => { const v = $('#cft').value.trim(); if (!v) return; await api('/cloudflare-token', { token: v }); $('#cft').value = ''; $('#cfst').textContent = '✓ Token saved to Keychain. Tell Claude to apply WAF + DNS.'; };
+window.saveSet = async (b) => { await api('/settings', b); alert('Saved'); };
+window.rename = async (id, cur) => { const n = prompt('New name', cur); if (n) act(`/clients/${id}/rename`, { name: n }); };
+window.showLog = async (id) => {
+  const l = await api(`/runs/${id}/log`);
+  $('#dlgBody').innerHTML = `<h3>${esc(id)}</h3><h4>Result</h4><pre class="log">${esc(l.result_text||'—')}</pre><h4>Stream (jsonl)</h4><pre class="log">${esc(l.jsonl)}</pre>${l.stderr?`<h4>stderr</h4><pre class="log">${esc(l.stderr)}</pre>`:''}`;
+  dlg.showModal();
+};
+
+// Simple LCS line diff for config preview.
+function diff(a, b) {
+  const A = a.split('\n'), B = b.split('\n'), n = A.length, m = B.length;
+  const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i+1][j+1] + 1 : Math.max(L[i+1][j], L[i][j+1]);
+  const out = []; let i = 0, j = 0;
+  while (i < n && j < m) { if (A[i] === B[j]) { out.push([' ', A[i]]); i++; j++; } else if (L[i+1][j] >= L[i][j+1]) out.push(['-', A[i++]]); else out.push(['+', B[j++]]); }
+  while (i < n) out.push(['-', A[i++]]); while (j < m) out.push(['+', B[j++]]);
+  return out;
+}
+window.preview = (n) => {
+  const nv = $('#ed-' + n).value, d = diff(window._orig[n], nv);
+  const changed = d.some(x => x[0] !== ' ');
+  $('#pv-' + n).innerHTML = changed ? `<div class="diff">${d.map(([t, l]) => `<div class="${t==='+'?'a':t==='-'?'r':''}">${t} ${esc(l)}</div>`).join('')}</div>
+    <p><button class="b p" onclick="saveCfg('${n}')">Save changes</button></p>` : '<p>No changes.</p>';
+};
+window.saveCfg = async (n) => { if (!confirm('Save ' + n + '?')) return; await api('/config/' + n, { content: $('#ed-' + n).value }); alert('Saved'); refresh(true); };
+
+async function loadNodes() {
+  try { const r = await fetch('/api/remotes'); if (r.ok) { const j = await r.json(); NODES = { local: j.local, remotes: j.remotes }; } } catch (e) {}
+  if (TARGET !== 'local' && !NODES.remotes.includes(TARGET)) TARGET = 'local';
+}
+(async () => { const me = await (await fetch('/api/me')).json(); if (me.authed) { CSRF = me.csrf; await loadNodes(); shell(); } else renderLogin(); })();
+</script>
+</body>
+</html>
