@@ -142,6 +142,9 @@ const DEFAULTS: Record<string, string> = {
 // migrations
 const runCols = (db.prepare("PRAGMA table_info(runs)").all() as any[]).map((c) => c.name);
 if (!runCols.includes("engine")) db.exec("ALTER TABLE runs ADD COLUMN engine TEXT NOT NULL DEFAULT 'claude'");
+// Auto-continue after a bridge restart: the session to continue and how often this run was resumed.
+if (!runCols.includes("continue_session_id")) db.exec("ALTER TABLE runs ADD COLUMN continue_session_id TEXT");
+if (!runCols.includes("resume_count")) db.exec("ALTER TABLE runs ADD COLUMN resume_count INTEGER NOT NULL DEFAULT 0");
 
 const ins = db.prepare("INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)");
 for (const [k, v] of Object.entries(DEFAULTS)) ins.run(k, v);

@@ -278,12 +278,21 @@ review model, IP allowlist, public URL) live in `data/bridge.db` and are changed
 desktop-bridge status | restart | logs | kill on|off      # macOS / Linux
 npm run ctl -- status|clients|approve <id>|approve-auth <id>|revoke <id>|kill on|off|runs|pin-config
 node scripts/e2e-local.mjs [none|run|codex|mcp|parallel|subagents]   # end-to-end test (approves via ctl; "none" skips model runs)
+node scripts/e2e-restart.mjs [claude|codex|hard|all]                  # restart mid-run and check the run continues (own temp instance)
 ```
 Health: `GET /healthz` (alias `/health`): `active_runs`, `max_concurrent_runs`, kill switch (details only on localhost).
 
-**Updating safely.** A restart marks every running job as failed (`bridge restarted`), so restart only when idle:
+**Restarts don't lose work.** If the bridge restarts (update, crash, reboot, `kickstart`, `systemctl restart`)
+while runs are active, each interrupted run **continues automatically under the same `run_id`**:
+- on a normal stop the bridge stops its runs' process trees and leaves them `running`; on the next boot they are requeued;
+- Claude runs continue their session with `claude -p --resume <session_id>`, Codex runs with `codex exec resume <thread_id>`,
+  plus a short "continue where you left off" prompt (the full history is in the session);
+- runs interrupted before their session started are rerun with the original prompt;
+- after a hard kill, a leftover `claude`/`codex` process is stopped before the run continues, so a session never runs twice;
+- `get_run` shows `resume_count`; after 3 restarts within one run it is marked failed (crash-loop guard).
+
+So updating is just:
 ```sh
-curl -s http://127.0.0.1:8787/healthz          # wait until "active_runs":[] (optionally: kill switch on to stop new runs)
 git pull && npm ci && npm run build
 desktop-bridge restart                         # macOS launchd / Linux systemd --user; Windows: restart the "desktop-bridge" task
 ```
@@ -300,7 +309,7 @@ desktop-bridge restart                         # macOS launchd / Linux systemd -
 | Panel tab shows "unreachable" | The SSH forward to that remote is down: check the forward service and `ssh <host>` without a password. |
 | Runs fail immediately | `data/runs/<id>.stderr.log`; check `claude` / `codex` are logged in for the service user. |
 | A run stays `queued` with free slots | It resumes a session another active run is using; it starts when that run ends. |
-| Run failed with "bridge restarted" | The service restarted mid-run. Restart only when `/healthz` shows no `active_runs`. |
+| Run failed with "bridge restarted N times" | The bridge restarted 3+ times during one run (crash loop?). Check `data/logs`. |
 | "changed outside the admin panel" | Someone edited `config/` directly: review it, then Settings → *Accept on-disk version*. |
 
 ## FAQ

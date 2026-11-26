@@ -7,7 +7,7 @@ import { clientIp, ipAllowed, notify, pinConfigHashes, panelUrl, SILENT_ALERT_KI
 import { oauthRouter, requireBearer, base, type AuthedRequest } from "./oauth/router.js";
 import { buildMcpServer } from "./mcp.js";
 import { adminApp } from "./admin/router.js";
-import { recoverOnBoot, activeRunIds, maxConcurrentRuns } from "./runs/runner.js";
+import { recoverOnBoot, activeRunIds, maxConcurrentRuns, shutdownRuns } from "./runs/runner.js";
 
 // First start (guarded profile): create config/ from the examples and pin their hashes.
 if (GUARDED) {
@@ -146,6 +146,7 @@ for (const remote of REMOTES) {
 }
 
 // Don't lose queued notifications on a normal stop/restart.
-for (const sig of ["SIGTERM", "SIGINT"] as const) process.once(sig, () => { flushNotifications(); setTimeout(() => process.exit(0), 1500); });
+// Graceful stop: send queued notifications, stop runs (they continue on the next boot), then exit.
+for (const sig of ["SIGTERM", "SIGINT"] as const) process.once(sig, () => { flushNotifications(); shutdownRuns(); setTimeout(() => process.exit(0), 1500); });
 
 process.on("unhandledRejection", (e) => console.error("unhandledRejection", e));

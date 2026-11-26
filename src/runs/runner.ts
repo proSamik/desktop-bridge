@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import {
   ALLOWED_MCP_PATH, POLICY_PATH, RUNS_DIR, CLAUDE_BIN, CODEX_BIN, CODEX_HOME_DIR, CHILD_PATH, HOME, GUARDED_BUILTIN_TOOLS, ROOT,
   kcGet, envSecretName, GUARDED, IS_DARWIN, IS_WIN, MAX_CONCURRENT_ENV, SUBAGENT_TOOLS,
@@ -120,11 +120,18 @@ function configIntact(): string | null {
   return null;
 }
 
+/** Session a run continues: the auto-continue session after a restart wins over the caller's resume id. */
+const sessionOf = (run: any): string | null => run.continue_session_id || run.resume_session_id || null;
+export const MAX_AUTO_RESUMES = 3;
+const CONTINUE_PROMPT =
+  "The desktop-bridge service that runs you was restarted, which interrupted this session. " +
+  "Continue exactly where you left off and finish the original task. If a command was cut off, check its state before repeating it.";
+
 /** Oldest queued run that doesn't resume a session an active run is already using. */
 function nextQueued(): any | undefined {
   const busy = new Set([...active.values()].map((a) => a.resumeId).filter(Boolean));
   const queued = db.prepare("SELECT * FROM runs WHERE status='queued' ORDER BY created_at, rowid").all() as any[];
-  return queued.find((q) => !q.resume_session_id || !busy.has(q.resume_session_id));
+  return queued.find((q) => !sessionOf(q) || !busy.has(sessionOf(q)));
 }
 
 /** Starts queued runs until the concurrency limit is reached or nothing eligible is left. */
@@ -194,10 +201,10 @@ function claudeArgs(run: any) {
     );
   }
   args.push("--permission-mode", (PERMISSION_MODES as readonly string[]).includes(mode) ? mode : "default");
-  if (run.resume_session_id) args.push("--resume", run.resume_session_id);
+  if (sessionOf(run)) args.push("--resume", sessionOf(run)!);
   if (run.model) args.push("--model", run.model);
   if (run.max_turns) args.push("--max-turns", String(run.max_turns));
-  return { bin: CLAUDE_BIN, args, stdin: run.prompt, mode };
+  return { bin: CLAUDE_BIN, args, stdin: run.continue_session_id ? CONTINUE_PROMPT : run.prompt, mode };
 }
 
 const tomlStr = (s: string) => JSON.stringify(s); // JSON string escaping is valid TOML basic-string escaping
@@ -230,17 +237,17 @@ function codexArgs(run: any) {
   const sandbox = getSetting("codex_sandbox");
   const sb = (CODEX_SANDBOXES as readonly string[]).includes(sandbox) ? sandbox : "workspace-write";
   const args = ["exec"];
-  if (run.resume_session_id) args.push("resume", run.resume_session_id);
+  if (sessionOf(run)) args.push("resume", sessionOf(run)!);
   args.push("--json", "--skip-git-repo-check");
   if (sb === "danger-full-access") args.push("--dangerously-bypass-approvals-and-sandbox");
   else args.push("-c", `sandbox_mode="${sb}"`);
   if (run.model) args.push("-m", run.model);
   args.push("-");
-  let stdin = run.prompt;
+  let stdin = run.continue_session_id ? CONTINUE_PROMPT : run.prompt;
   if (GUARDED) {
     prepareGuardedCodexHome();
     // Codex has no --append-system-prompt; the policy goes first, as instructions from the bridge.
-    stdin = `<bridge-policy>\n${fs.readFileSync(POLICY_PATH, "utf8")}\n</bridge-policy>\n\n${run.prompt}`;
+    stdin = `<bridge-policy>\n${fs.readFileSync(POLICY_PATH, "utf8")}\n</bridge-policy>\n\n${stdin}`;
   }
   return { bin: CODEX_BIN, args, stdin, mode: `codex:${sb}` };
 }
@@ -266,7 +273,7 @@ function start(run: any) {
   const started = Date.now();
   db.prepare("UPDATE runs SET status='running', started_at=?, pid=?, permission_mode=? WHERE id=?").run(now(), child.pid ?? null, cmd.mode, run.id);
   const caf = IS_DARWIN && child.pid ? spawn("caffeinate", ["-i", "-s", "-w", String(child.pid)], { stdio: "ignore" }) : undefined;
-  active.set(run.id, { runId: run.id, child, caffeinate: caf, resumeId: run.resume_session_id || null });
+  active.set(run.id, { runId: run.id, child, caffeinate: caf, resumeId: sessionOf(run) });
 
   let buf = "";
   const r = { done: false, isError: false, text: null as string | null, cost: null as number | null, session: null as string | null };
@@ -309,6 +316,7 @@ function start(run: any) {
     if (finished) return; finished = true;
     log.end(); errLog.end();
     try { caf?.kill(); } catch {}
+    if (shuttingDown) { active.delete(run.id); return; } // stays "running" in the DB; recoverOnBoot() continues it
     const row = db.prepare("SELECT error FROM runs WHERE id=?").get(run.id) as any;
     const cancelled = !!row?.error;
     const status = cancelled ? "cancelled" : code === 0 && r.done && !r.isError ? "succeeded" : "failed";
@@ -323,9 +331,58 @@ function start(run: any) {
   child.on("close", (code) => finish(code));
 }
 
-/** On boot: anything left "running"/"reviewing" from a previous process is dead. */
+// ---------- restart handling: stop cleanly, continue on boot ----------
+let shuttingDown = false;
+
+/** Graceful stop (SIGTERM/SIGINT): kill every run's process tree but leave it "running" so the next boot continues it. */
+export function shutdownRuns() {
+  shuttingDown = true;
+  for (const a of active.values()) killTree(a.child);
+}
+
+/** A run's old process may survive a hard kill of the bridge (own process group). Stop it so a session never runs twice. */
+function killOrphan(pid: number | null) {
+  if (!pid || IS_WIN) return;
+  let cmd = "";
+  try { cmd = execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" }).trim(); } catch { return; } // not running
+  if (!/claude|codex/i.test(cmd)) return; // PID reused by something else
+  const signal = (sig: NodeJS.Signals) => { try { process.kill(-pid, sig); } catch { try { process.kill(pid, sig); } catch {} } };
+  const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+  signal("SIGTERM");
+  for (let i = 0; i < 30 && alive(); i++) pause(100); // up to 3 s to exit cleanly
+  if (alive()) { signal("SIGKILL"); for (let i = 0; i < 20 && alive(); i++) pause(100); }
+}
+
+/**
+ * On boot, runs interrupted by the restart continue automatically under the same run_id:
+ *  - "running" with a session/thread id -> requeued; Claude `--resume <session>` / `codex exec resume <thread>` + "continue" prompt
+ *  - "running" before the session started -> requeued with the original prompt
+ *  - "reviewing" -> reviewed again
+ * After MAX_AUTO_RESUMES restarts a run is marked failed instead (protects against crash loops).
+ */
 export function recoverOnBoot() {
-  db.prepare("UPDATE runs SET status='failed', error='bridge restarted', ended_at=? WHERE status IN ('running','reviewing')").run(now());
+  const t = now();
+  for (const r of db.prepare("SELECT * FROM runs WHERE status='running'").all() as any[]) {
+    killOrphan(r.pid);
+    if (r.resume_count >= MAX_AUTO_RESUMES) {
+      db.prepare("UPDATE runs SET status='failed', error=?, ended_at=? WHERE id=?").run(`bridge restarted ${r.resume_count + 1} times during this run`, t, r.id);
+      continue;
+    }
+    db.prepare(
+      `UPDATE runs SET status='queued', continue_session_id=COALESCE(?, continue_session_id), resume_count=resume_count+1,
+       pid=NULL, error=NULL WHERE id=?`
+    ).run(r.session_id || null, r.id);
+    alert("run_resumed", `Run ${r.id} continues after a bridge restart${r.session_id ? ` (session ${r.session_id.slice(0, 8)})` : ""}`);
+  }
+  for (const r of db.prepare("SELECT * FROM runs WHERE status='reviewing'").all() as any[]) {
+    if (!GUARDED) { db.prepare("UPDATE runs SET status='queued' WHERE id=?").run(r.id); continue; }
+    reviewIntent(r.prompt, r.cwd, r.resume_session_id).then((v) => {
+      const status = v.verdict === "allow" ? "queued" : v.verdict === "deny" ? "denied" : "awaiting_approval";
+      db.prepare("UPDATE runs SET status=?, verdict=?, verdict_reason=?, verdict_stage=? WHERE id=? AND status='reviewing'").run(status, v.verdict, v.reason, v.stage, r.id);
+      pump();
+    });
+  }
   pump();
 }
 export const activeRunIds = () => [...active.keys()];

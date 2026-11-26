@@ -10,7 +10,7 @@ import { readClaudeLogs, readCodexLogs } from "./runs/logs.js";
 const json = (v: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(v, null, 2) }] });
 const fail = (msg: string) => ({ content: [{ type: "text" as const, text: msg }], isError: true });
 
-const RUN_COLS = `id run_id, engine, status, verdict, verdict_reason, verdict_stage, prompt, cwd, model, resume_session_id, created_at, started_at, ended_at,
+const RUN_COLS = `id run_id, engine, resume_count, continue_session_id, status, verdict, verdict_reason, verdict_stage, prompt, cwd, model, resume_session_id, created_at, started_at, ended_at,
   exit_code, duration_ms, cost_usd, session_id, error`;
 
 export type Caller = { clientId: string; tokenId: string; ip: string };
