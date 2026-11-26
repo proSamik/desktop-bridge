@@ -27,6 +27,11 @@ export function panelUrl(remote?: string): string | undefined {
 const firstFile = (...ps: string[]) => ps.find((p) => { try { fs.accessSync(p, fs.constants.X_OK); return true; } catch { return false; } });
 const TERMINAL_NOTIFIER = IS_DARWIN ? firstFile("/opt/homebrew/bin/terminal-notifier", "/usr/local/bin/terminal-notifier") : undefined;
 let tnBrokenUntil = 0;
+/** deploy/macos/notifier: posts as "Desktop Bridge", so a click / "Show" opens the URL. Looked up on every call. */
+const bridgeNotifier = () => IS_DARWIN
+  ? firstFile(`${process.env.HOME}/Applications/Desktop Bridge.app/Contents/MacOS/notifier`, "/Applications/Desktop Bridge.app/Contents/MacOS/notifier")
+  : undefined;
+let bnBrokenUntil = 0;
 
 /**
  * Desktop notification; clicking it opens `url` (the admin panel) where the platform allows.
@@ -36,9 +41,23 @@ let tnBrokenUntil = 0;
  *  - Windows: a toast whose click opens the URL (built-in PowerShell + WinRT, no module needed).
  */
 export function notify(title: string, message: string, url?: string) {
-  const msg = message.slice(0, 240);
+  const msg = message.slice(0, 400);
   if (IS_DARWIN) {
     const plain = () => execFile("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run", title, msg], () => {});
+    const tryTerminalNotifier = () => {
+      if (!TERMINAL_NOTIFIER || Date.now() <= tnBrokenUntil) return plain();
+      const args = ["-title", title, "-message", msg.replace(/^[-\[\\]/, " $&")];
+      if (url) args.push("-open", url);
+      execFile(TERMINAL_NOTIFIER, args, { timeout: 15_000 }, (err) => { if (err) { tnBrokenUntil = Date.now() + 3600_000; plain(); } });
+    };
+    const bn = bridgeNotifier();
+    if (bn && Date.now() > bnBrokenUntil) {
+      const args = ["--title", title, "--message", msg];
+      if (url) args.push("--url", url);
+      // Exit 3 = not allowed yet (System Settings > Notifications > Desktop Bridge); fall back and retry in 10 min.
+      execFile(bn, args, { timeout: 120_000 }, (err) => { if (err) { bnBrokenUntil = Date.now() + 600_000; tryTerminalNotifier(); } });
+      return;
+    }
     if (TERMINAL_NOTIFIER && Date.now() > tnBrokenUntil) {
       const args = ["-title", title, "-message", msg.replace(/^[-\[\\]/, " $&")];
       if (url) args.push("-open", url);
@@ -72,9 +91,19 @@ $d = New-Object Windows.Data.Xml.Dom.XmlDocument; $d.LoadXml($xml)
   });
 }
 
+/** Alert kinds that are recorded (panel) but never pop up as desktop notifications. */
+export const SILENT_ALERT_KINDS = new Set(["new_ip"]);
+
 export function alert(kind: string, message: string) {
   db.prepare("INSERT INTO alerts(ts,kind,message) VALUES(?,?,?)").run(now(), kind, message);
-  notify(`desktop-bridge (${NODE_NAME})`, message, panelUrl());
+  if (!SILENT_ALERT_KINDS.has(kind)) notify(`desktop-bridge (${NODE_NAME})`, message, panelUrl());
+}
+
+/** First few non-empty lines of a prompt, for notifications. */
+export function promptExcerpt(prompt: string, maxLines = 3, maxChars = 220) {
+  const lines = String(prompt).split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(0, maxLines);
+  const s = lines.join("\n");
+  return s.length > maxChars ? s.slice(0, maxChars - 1) + "…" : s;
 }
 
 /** Records an IP; raises an alert the first time it is seen. */

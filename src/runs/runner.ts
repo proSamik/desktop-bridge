@@ -6,7 +6,7 @@ import {
   kcGet, envSecretName, GUARDED, IS_DARWIN, IS_WIN, MAX_CONCURRENT_ENV, SUBAGENT_TOOLS,
 } from "../config.js";
 import { db, now, getSetting } from "../db.js";
-import { fileSha, alert, randId } from "../util.js";
+import { fileSha, alert, randId, promptExcerpt } from "../util.js";
 import { reviewIntent, type Verdict } from "../review/review.js";
 
 export const PERMISSION_MODES = ["default", "acceptEdits", "dontAsk", "plan", "bypassPermissions"] as const;
@@ -58,8 +58,12 @@ export async function createRun(r: NewRun): Promise<{ run_id: string; status: st
   db.prepare("UPDATE runs SET status=?, verdict=?, verdict_reason=?, verdict_stage=? WHERE id=? AND status='reviewing'").run(
     status, v.verdict, v.reason, v.stage, id
   );
-  if (v.verdict === "deny") alert("run_denied", `Run refused (${v.stage}): ${v.reason}`);
-  if (v.verdict === "ask") alert("run_ask", `Run waiting for your approval: ${r.prompt.slice(0, 80)}`);
+  const who = (db.prepare("SELECT name FROM clients WHERE id=?").get(r.clientId) as any)?.name || "client";
+  const eng = engine === "codex" ? "Codex" : "Claude";
+  const excerpt = promptExcerpt(r.prompt);
+  if (v.verdict === "allow") alert("run", `${eng} run from ${who}:\n${excerpt}`);
+  if (v.verdict === "deny") alert("run_denied", `Refused ${eng} run from ${who} (${v.reason}):\n${excerpt}`);
+  if (v.verdict === "ask") alert("run_ask", `${eng} run from ${who} needs your approval:\n${excerpt}`);
   pump();
   return { run_id: id, status, engine, verdict: v.verdict, reason: v.reason };
 }

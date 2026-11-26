@@ -122,11 +122,14 @@ desktop-bridge open                    # admin panel at http://127.0.0.1:8788
 ```
 - Secrets live in the **Keychain** (service `$MB_KEYCHAIN_SERVICE`, default `desktop-bridge`).
 - While a run is active the Mac is kept awake with `caffeinate -i -s` (AC power).
-- Clickable notifications: `brew install terminal-notifier` (picked up automatically). If macOS refuses it permission
-  (it exits with "Notifications are not allowed", seen on recent macOS), the bridge falls back automatically. Without it,
-  notifications still appear, but macOS ties AppleScript notifications to Script Editor, so a click can't open the panel.
+- Clickable notifications: build the bundled notifier app once (needs Xcode or the Command Line Tools):
+  `deploy/macos/notifier/build.sh`, then allow **Desktop Bridge** in System Settings → Notifications. It posts as its
+  own app, so clicking a notification or **Show** opens the admin panel on the right machine's tab. Fallbacks, used
+  automatically: `terminal-notifier` (if installed and permitted), then AppleScript (shows, but a click opens Script Editor).
+- Notifications show the first lines of every submitted prompt (engine + client), plus held/refused runs, new clients
+  and connection requests. New IPs are listed in the panel only.
 - Logs: `data/logs/*.log`. CLI: `desktop-bridge open|status|restart|logs|kill on|off`.
-- Optional launcher app: `osacompile -o ~/Applications/"Desktop Bridge.app" -e 'do shell script "$HOME/.local/bin/desktop-bridge open"'`.
+- Optional launcher app: `osacompile -o ~/Applications/"Desktop Bridge Panel.app" -e 'do shell script "$HOME/.local/bin/desktop-bridge open"'`.
 
 ## Linux
 ```sh

@@ -3,7 +3,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import fs from "node:fs";
 import { BIND, MCP_PORT, ADMIN_PORT, IS_PANEL, GUARDED, REMOTES, NODE_NAME, remoteKeyName, kcGet, ALLOWED_MCP_PATH, POLICY_PATH, ALLOWED_MCP_EXAMPLE, POLICY_EXAMPLE, CONFIG_DIR } from "./config.js";
 import { db, now, getSetting } from "./db.js";
-import { clientIp, ipAllowed, notify, pinConfigHashes, panelUrl } from "./util.js";
+import { clientIp, ipAllowed, notify, pinConfigHashes, panelUrl, SILENT_ALERT_KINDS } from "./util.js";
 import { oauthRouter, requireBearer, base, type AuthedRequest } from "./oauth/router.js";
 import { buildMcpServer } from "./mcp.js";
 import { adminApp } from "./admin/router.js";
@@ -124,7 +124,7 @@ setInterval(() => {
   db.prepare("DELETE FROM requests WHERE ts<?").run(t - 90 * 86400);
 }, 3600_000).unref();
 
-// Panel machine: surface remote alerts (new clients, connection requests, new IPs) as local notifications.
+// Panel machine: surface remote alerts (new runs, clients, connection requests) as local notifications.
 for (const remote of REMOTES) {
   const k = `remote_alert_seen_${remote.name}`;
   let seen = Number(getSetting(k) || (remote.name === "air" ? getSetting("linux_alert_seen") : "") || 0);
@@ -134,9 +134,9 @@ for (const remote of REMOTES) {
     try {
       const r = await fetch(`${remote.url}/api/alerts`, { headers: { "x-mb-admin-key": key }, signal: AbortSignal.timeout(8000) });
       if (!r.ok) return;
-      const alerts = (await r.json()) as { id: number; message: string }[];
+      const alerts = (await r.json()) as { id: number; kind: string; message: string }[];
       const fresh = alerts.filter((a) => a.id > seen).sort((a, b) => a.id - b.id);
-      for (const a of fresh.slice(-3)) notify(`desktop-bridge (${remote.name})`, a.message, panelUrl(remote.name));
+      for (const a of fresh.filter((x) => !SILENT_ALERT_KINDS.has(x.kind)).slice(-3)) notify(`desktop-bridge (${remote.name})`, a.message, panelUrl(remote.name));
       if (fresh.length) {
         seen = fresh[fresh.length - 1].id;
         db.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(k, String(seen));

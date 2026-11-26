@@ -92,7 +92,8 @@ function go(t) {
 }
 async function refresh(full) {
   try {
-    const [alerts, ov] = await Promise.all([api('/alerts'), api('/overview')]);
+    const [allAlerts, ov] = await Promise.all([api('/alerts'), api('/overview')]);
+    const alerts = allAlerts.filter(a => a.kind !== 'run');
     $('#ksBadge').textContent = (TARGET === 'local' ? NODES.local : TARGET) + ' ' + (ov.kill_switch ? '● KILL SWITCH ON' : '● live'); $('#ksBadge').className = 'ks' + (ov.kill_switch ? ' on' : '');
     $('#alerts').innerHTML = alerts.length ? `<div class="banner"><b>${alerts.length} alert${alerts.length>1?'s':''}</b> <button class="b" onclick="ack()">Dismiss all</button>
       <ul>${alerts.slice(0,8).map(a => `<li>${esc(a.message)} <span class="pill">${ago(a.ts)}</span></li>`).join('')}</ul></div>` : '';
