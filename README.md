@@ -73,8 +73,10 @@ offline, the others keep serving; only approving *new* connections waits for the
   allowlist, appended policy prompt, config tamper detection.
 - **Audit log** of every request (time, client, token, IP, CF-Ray, user agent, tool, status, prompt).
 - **Origin IP allowlist** on `CF-Connecting-IP`, per-client rate limit, global kill switch.
-- **Alerts + desktop notifications** (new client, connection request, new IP, held or refused run) for the local machine
+- **Alerts + desktop notifications** (new client, connection request, held or refused run) for the local machine
   and every remote; clicking one opens the admin panel on that machine's tab (see each platform section).
+  Notifications are **grouped**: collected for 1 minute (or 5 minutes, or off: Settings → Group notifications) and
+  shown as one per machine ("3 alerts in the last minute"); the panel's alert banner is always immediate.
 
 ## Roles: profile and admin style
 Two independent settings in `.env`:

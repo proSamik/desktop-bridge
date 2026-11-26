@@ -136,6 +136,7 @@ const DEFAULTS: Record<string, string> = {
   last_totp_counter: "0",
   max_concurrent_runs: "6",
   allow_subagents: "1",
+  notify_batch_seconds: "60",
   ip_allowlist: "160.79.104.0/21, 153.61.208.0/20",
 };
 // migrations

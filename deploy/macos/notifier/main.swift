@@ -1,6 +1,7 @@
 // Desktop Bridge notifier: posts a notification as its own app, so clicking it (or "Show")
 // opens the URL passed with --url instead of Script Editor.
-//   notifier --title T --message M [--subtitle S] [--url U]    post and exit (0 ok, 3 not allowed, 4 error)
+//   notifier --title T --message M [--subtitle S] [--url U] [--group G]   post and exit (0 ok, 3 not allowed, 4 error)
+//                                                              --group stacks notifications per machine
 //   notifier                                                   (launched by a click or by `open`): ask for
 //                                                              permission / handle the click, then quit
 import Cocoa
@@ -33,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       content.body = message
       if let s = self.arg("--subtitle") { content.subtitle = s }
       if let u = self.arg("--url") { content.userInfo = ["url": u] }
+      if let g = self.arg("--group") { content.threadIdentifier = g }  // Notification Center stacks by this
       let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
       center.add(req) { err in
         if let err = err { self.fail(4, "\(err)") }

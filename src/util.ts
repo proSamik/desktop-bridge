@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import { execFile } from "node:child_process";
 import type { Request } from "express";
-import { db, now, setSetting } from "./db.js";
+import { db, now, setSetting, getSetting } from "./db.js";
 import { ALLOWED_MCP_PATH, POLICY_PATH, IS_DARWIN, IS_WIN, NODE_NAME, IS_PANEL, ADMIN_PORT } from "./config.js";
 
 export const sha256 = (s: string | Buffer) => crypto.createHash("sha256").update(s).digest("hex");
@@ -40,8 +40,47 @@ let bnBrokenUntil = 0;
  *  - Linux: notify-send with an "Open admin panel" action (libnotify >= 0.7.9), else a plain notify-send.
  *  - Windows: a toast whose click opens the URL (built-in PowerShell + WinRT, no module needed).
  */
+// ---------- batching: one summary notification per machine per window ----------
+/** Allowed values of the notify_batch_seconds setting: 0 = instant, 60 = 1 minute, 300 = 5 minutes. */
+export const NOTIFY_BATCH_CHOICES = [0, 60, 300];
+const batchSeconds = () => {
+  const n = Number(getSetting("notify_batch_seconds"));
+  return NOTIFY_BATCH_CHOICES.includes(n) ? n : 60;
+};
+const pending = new Map<string, { url?: string; msgs: string[] }>(); // key: notification title (one per machine)
+let flushTimer: NodeJS.Timeout | null = null;
+
+/**
+ * Queue a desktop notification. Within a batch window (Settings → Notifications, default 1 minute) all
+ * notifications with the same title (= the same machine) become one: a single alert is shown as is,
+ * several become "N alerts in the last minute" with the latest ones listed. Clicking opens the panel tab.
+ */
 export function notify(title: string, message: string, url?: string) {
-  const msg = message.slice(0, 400);
+  const win = batchSeconds();
+  if (win === 0) return deliver(title, message, url);
+  const p = pending.get(title) ?? { url, msgs: [] };
+  p.msgs.push(message);
+  if (url) p.url = url;
+  pending.set(title, p);
+  if (!flushTimer) flushTimer = setTimeout(flushNotifications, win * 1000);
+}
+
+/** Sends everything queued now (also used on shutdown and when the window is changed). */
+export function flushNotifications() {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  const span = batchSeconds() >= 300 ? "5 minutes" : "minute";
+  for (const [title, p] of pending) {
+    if (p.msgs.length === 1) { deliver(title, p.msgs[0], p.url); continue; }
+    const uniq = [...new Set(p.msgs)];
+    const lines = uniq.slice(-3).map((m) => `• ${m.slice(0, 110)}`).join("\n");
+    const more = uniq.length > 3 ? `\n+${uniq.length - 3} more in the admin panel` : "";
+    deliver(title, `${p.msgs.length} alerts in the last ${span}:\n${lines}${more}`, p.url);
+  }
+  pending.clear();
+}
+
+function deliver(title: string, message: string, url?: string) {
+  const msg = message.slice(0, 600);
   if (IS_DARWIN) {
     const plain = () => execFile("osascript", ["-e", "on run argv", "-e", "display notification (item 2 of argv) with title (item 1 of argv)", "-e", "end run", title, msg], () => {});
     const tryTerminalNotifier = () => {
@@ -52,7 +91,7 @@ export function notify(title: string, message: string, url?: string) {
     };
     const bn = bridgeNotifier();
     if (bn && Date.now() > bnBrokenUntil) {
-      const args = ["--title", title, "--message", msg];
+      const args = ["--title", title, "--message", msg, "--group", title];
       if (url) args.push("--url", url);
       // Exit 3 = not allowed yet (System Settings > Notifications > Desktop Bridge); fall back and retry in 10 min.
       execFile(bn, args, { timeout: 120_000 }, (err) => { if (err) { bnBrokenUntil = Date.now() + 600_000; tryTerminalNotifier(); } });

@@ -7,7 +7,7 @@ import { checkAdminCredentials, createSession, destroySession, getSession, requi
 import { revokeClient, approveAuthRequest, denyAuthRequest } from "../oauth/router.js";
 import { cancelRun, approveAskRun, rejectAskRun, cancelAllRuns, PERMISSION_MODES, CODEX_SANDBOXES, currentRunId, activeRunIds, maxConcurrentRuns, pump } from "../runs/runner.js";
 import { MAX_CONCURRENT_ENV } from "../config.js";
-import { pinConfigHashes, fileSha, safeEqual } from "../util.js";
+import { pinConfigHashes, fileSha, safeEqual, NOTIFY_BATCH_CHOICES, flushNotifications } from "../util.js";
 
 const PANEL = path.join(ROOT, "src", "admin", "panel.html");
 
@@ -206,6 +206,7 @@ export function adminApp() {
       max_concurrent_runs: maxConcurrentRuns(),
       max_concurrent_env_override: MAX_CONCURRENT_ENV != null,
       allow_subagents: getSetting("allow_subagents") === "1",
+      notify_batch_seconds: Number(getSetting("notify_batch_seconds") || 60),
       codex_sandboxes: CODEX_SANDBOXES,
       profile: GUARDED ? "guarded" : "open",
       ui: IS_PANEL ? "panel" : "api",
@@ -236,6 +237,12 @@ export function adminApp() {
       if (!Number.isInteger(n) || n < 1 || n > 10) return res.status(400).json({ error: "max concurrent runs must be 1-10" });
       setSetting("max_concurrent_runs", String(n));
       pump();
+    }
+    if (b.notify_batch_seconds !== undefined) {
+      const n = Number(b.notify_batch_seconds);
+      if (!NOTIFY_BATCH_CHOICES.includes(n)) return res.status(400).json({ error: "notification grouping must be 0, 60 or 300 seconds" });
+      setSetting("notify_batch_seconds", String(n));
+      flushNotifications();
     }
     if (b.allow_subagents !== undefined) setSetting("allow_subagents", b.allow_subagents ? "1" : "0");
     if (b.codex_sandbox !== undefined) {
