@@ -44,7 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
   // Click on the notification or its "Show" button.
   func userNotificationCenter(_ c: UNUserNotificationCenter, didReceive r: UNNotificationResponse,
                               withCompletionHandler done: @escaping () -> Void) {
-    if let s = r.notification.request.content.userInfo["url"] as? String, let u = URL(string: s) {
+    // Only the local admin panel: http(s) on loopback. Anything else is ignored.
+    if let s = r.notification.request.content.userInfo["url"] as? String, let u = URL(string: s),
+       ["http", "https"].contains(u.scheme ?? ""), ["127.0.0.1", "localhost", "::1"].contains(u.host ?? "") {
       NSWorkspace.shared.open(u)
     }
     done()
