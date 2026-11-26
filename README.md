@@ -33,6 +33,11 @@ offline, the others keep serving; only approving *new* connections waits for the
 ---
 
 ## Why desktop-bridge
+Hosted agent platforms and server-side bots usually mean another big plan or API bill. desktop-bridge reuses the
+Claude Code and Codex subscriptions you already have, on machines you already own: your main chatbot orchestrates over
+MCP, jobs run async on your Mac or VPS, any scheduler or bot that can call an MCP tool can start routines, and you can
+spread work across engines and machines to stay within usage limits.
+
 - **Remote control for AI coding agents**: start Claude Code or Codex jobs on a real machine from anywhere.
 - **No inbound ports**: Cloudflare Tunnel (`cloudflared`) connects outward; the server only listens on `127.0.0.1`.
 - **Safe by default**: OAuth 2.1 + PKCE, new clients need your approval, IP allowlist, kill switch, audit log,
