@@ -297,8 +297,9 @@ git pull && npm ci && npm run build
 desktop-bridge restart                         # macOS launchd / Linux systemd --user; Windows: restart the "desktop-bridge" task
 ```
 **Testing without touching a live instance:** start a second copy on other ports with its own data dir, e.g.
-`MB_ROOT=/tmp/bridge-test MB_MCP_PORT=9787 MB_ADMIN_PORT=9788 MB_PUBLIC_URL=http://127.0.0.1:9787 MB_MAX_CONCURRENT_RUNS=3 node dist/server.js`
-(copy your `config/` into `/tmp/bridge-test/config` first), then `MB_ROOT=/tmp/bridge-test MB_MCP_PORT=9787 node scripts/e2e-local.mjs`.
+`MB_ROOT=/tmp/bridge-test MB_MCP_PORT=9787 MB_ADMIN_PORT=9788 MB_PUBLIC_URL=http://127.0.0.1:9787 MB_MAX_CONCURRENT_RUNS=3 MB_NOTIFY=0 node dist/server.js`
+(copy your `config/` into `/tmp/bridge-test/config` first; `MB_NOTIFY=0` keeps the copy from sending desktop
+notifications that link to its temporary port), then `MB_ROOT=/tmp/bridge-test MB_MCP_PORT=9787 node scripts/e2e-local.mjs`.
 
 ## Troubleshooting
 | Symptom | Fix |

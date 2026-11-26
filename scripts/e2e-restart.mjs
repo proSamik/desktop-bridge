@@ -14,7 +14,7 @@ const ROOT = fs.mkdtempSync(path.join(os.tmpdir(), "bridge-restart-"));
 fs.mkdirSync(path.join(ROOT, "config"), { recursive: true });
 for (const f of ["allowed-mcp.example.json", "policy.example.md"]) fs.copyFileSync(path.join(REPO, "config", f), path.join(ROOT, "config", f));
 const ENV = {
-  ...process.env, MB_ROOT: ROOT, MB_MCP_PORT: String(PORT), MB_ADMIN_PORT: String(PORT + 1), MB_PUBLIC_URL: B,
+  ...process.env, MB_ROOT: ROOT, MB_MCP_PORT: String(PORT), MB_ADMIN_PORT: String(PORT + 1), MB_PUBLIC_URL: B, MB_NOTIFY: "0",
   MB_NODE_NAME: "restart-test", MB_PROFILE: process.env.MB_TEST_PROFILE || "guarded", MB_ADMIN_UI: "panel",
   MB_KEYCHAIN_SERVICE: "desktop-bridge-restart-test",
 };

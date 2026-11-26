@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import type { Request } from "express";
 import { db, now, setSetting, getSetting } from "./db.js";
 import { ALLOWED_MCP_PATH, POLICY_PATH, IS_DARWIN, IS_WIN, NODE_NAME, IS_PANEL, ADMIN_PORT } from "./config.js";
+import { NOTIFY_ENABLED } from "./config.js";
 
 export const sha256 = (s: string | Buffer) => crypto.createHash("sha256").update(s).digest("hex");
 export const randToken = (bytes = 32) => crypto.randomBytes(bytes).toString("base64url");
@@ -56,6 +57,7 @@ let flushTimer: NodeJS.Timeout | null = null;
  * several become "N alerts in the last minute" with the latest ones listed. Clicking opens the panel tab.
  */
 export function notify(title: string, message: string, url?: string) {
+  if (!NOTIFY_ENABLED) return; // MB_NOTIFY=0: e.g. a test copy, whose links would point at its own temporary port
   const win = batchSeconds();
   if (win === 0) return deliver(title, message, url);
   const p = pending.get(title) ?? { url, msgs: [] };

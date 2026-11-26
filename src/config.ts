@@ -65,6 +65,8 @@ export const GUARDED_BUILTIN_TOOLS = "Bash Read Write Edit Glob Grep WebFetch";
 /** Subagent tool for guarded runs when allow_subagents is on. Older Claude Code calls it Task, newer calls it Agent; both are listed. */
 export const SUBAGENT_TOOLS = "Task Agent";
 /** Optional override of the max_concurrent_runs setting (1-10). */
+/** MB_NOTIFY=0 turns off desktop notifications (test copies on other ports, headless boxes). Alerts are still recorded. */
+export const NOTIFY_ENABLED = !/^(0|false|off|no)$/i.test(env.MB_NOTIFY?.trim() || "");
 export const MAX_CONCURRENT_ENV = env.MB_MAX_CONCURRENT_RUNS?.trim() || undefined;
 
 export const ACCESS_TTL_S = 3600;
