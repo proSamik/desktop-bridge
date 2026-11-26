@@ -1,8 +1,19 @@
-# desktop-bridge
+# Agent Desktop Remote Control via Cloudflare Tunnel
 
-A remote **MCP server** that lets your Claude assistant (claude.ai, Claude Desktop, any MCP client) run
-**Claude Code** (`claude -p`) and **Codex** (`codex exec`) headless on your own machines: macOS, Linux or Windows.
-Each machine gets its own public URL through a Cloudflare Tunnel. One machine hosts the admin panel for all of them.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-blue)
+![MCP](https://img.shields.io/badge/MCP-Streamable%20HTTP-8A2BE2)
+![Node](https://img.shields.io/badge/node-%E2%89%A520.6-339933)
+
+**desktop-bridge** is a self-hosted **remote MCP server** that lets an AI agent (Claude on claude.ai, Claude Desktop,
+or any Model Context Protocol client) **remotely control your own computers** by running **Claude Code** (`claude -p`)
+and **OpenAI Codex CLI** (`codex exec`) headless on them: macOS, Linux and Windows.
+Each machine is exposed safely through a **Cloudflare Tunnel** (no open ports, no public IP), protected by **OAuth 2.1**
+with owner approval, and managed from one **admin panel**.
+
+Use it to give your AI assistant hands on your desktop or home server: run coding agents on your Mac from your phone,
+drive a headless Linux build box, fan out up to 6 parallel agent sessions with subagents, and read back every
+transcript, all from a Claude custom connector.
 
 ```
  Claude (custom connector)                                     your machines
@@ -15,6 +26,16 @@ Each machine gets its own public URL through a Cloudflare Tunnel. One machine ho
 
 Every machine is independent: own OAuth clients, tokens, database, run queue and tunnel. If the panel machine is
 offline, the others keep serving; only approving *new* connections waits for the panel.
+
+---
+
+## Why desktop-bridge
+- **Remote control for AI coding agents**: start Claude Code or Codex jobs on a real machine from anywhere.
+- **No inbound ports**: Cloudflare Tunnel (`cloudflared`) connects outward; the server only listens on `127.0.0.1`.
+- **Safe by default**: OAuth 2.1 + PKCE, new clients need your approval, IP allowlist, kill switch, audit log,
+  and an optional AI intent review before each run.
+- **Multi-machine**: one admin panel for your Mac, Linux and Windows machines, each with its own connector URL.
+- **Works with Claude custom connectors** out of the box (Dynamic Client Registration, Streamable HTTP MCP).
 
 ---
 
@@ -33,6 +54,7 @@ offline, the others keep serving; only approving *new* connections waits for the
 12. [Configuration reference](#configuration-reference)
 13. [Operations](#operations)
 14. [Troubleshooting](#troubleshooting)
+15. [FAQ](#faq)
 
 ---
 
@@ -267,6 +289,28 @@ desktop-bridge restart                         # macOS launchd / Linux systemd -
 | A run stays `queued` with free slots | It resumes a session another active run is using; it starts when that run ends. |
 | Run failed with "bridge restarted" | The service restarted mid-run. Restart only when `/healthz` shows no `active_runs`. |
 | "changed outside the admin panel" | Someone edited `config/` directly: review it, then Settings → *Accept on-disk version*. |
+
+## FAQ
+**How do I run Claude Code remotely on my own computer?**
+Install desktop-bridge on that computer, expose it with a Cloudflare Tunnel, and add `https://<your-host>/mcp` as a
+custom connector in Claude. Your assistant can then call `run_claude` to start `claude -p` jobs there.
+
+**Can my AI agent control my Mac, Linux box or Windows PC?**
+Yes. Each machine runs its own desktop-bridge; jobs run as your user with the tools you allow
+(guarded profile) or with full access (open profile).
+
+**Does it work with OpenAI Codex CLI?**
+Yes: `run_codex` (or `run_claude` with `engine: "codex"`) runs `codex exec` and returns the result and thread id.
+
+**Do I need to open ports or have a static IP?**
+No. `cloudflared` makes an outbound connection to Cloudflare; nothing listens on a public interface.
+
+**Is it an MCP server?**
+Yes: a Model Context Protocol server over Streamable HTTP with OAuth 2.1 (RFC 9728 metadata, Dynamic Client
+Registration, PKCE), so it works as a Claude remote MCP connector.
+
+**Can several agent sessions run at once?**
+Yes: up to 6 by default (1-10), and each Claude run can start its own subagents.
 
 ## License
 [MIT](LICENSE)
