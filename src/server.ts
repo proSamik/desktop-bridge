@@ -113,10 +113,15 @@ app.all("/mcp", requireBearer, (_req, res) => {
 
 app.use((_req, res) => res.status(404).json({ error: "not found" }));
 
-app.listen(MCP_PORT, BIND, () => console.log(`desktop-bridge "${NODE_NAME}" (${GUARDED ? "guarded" : "open"}, admin ${IS_PANEL ? "panel" : "api"}) MCP on http://${BIND}:${MCP_PORT} (public ${base()})`));
+// Express 5 passes listen errors (e.g. EADDRINUSE) to the callback: report them and exit instead of logging success.
+const listening = (what: string, port: number) => (err?: Error) => {
+  if (err) { console.error(`desktop-bridge: cannot listen on ${BIND}:${port} for ${what}: ${err.message}`); process.exit(1); }
+  console.log(`desktop-bridge "${NODE_NAME}" (${GUARDED ? "guarded" : "open"}, admin ${IS_PANEL ? "panel" : "api"}) ${what} on http://${BIND}:${port}${what === "MCP" ? ` (public ${base()})` : ""}`);
+};
+app.listen(MCP_PORT, BIND, listening("MCP", MCP_PORT));
 
 // ---------------- admin panel (never tunneled) ----------------
-adminApp().listen(ADMIN_PORT, BIND, () => console.log(`desktop-bridge admin ${IS_PANEL ? "panel" : "API"} on http://${BIND}:${ADMIN_PORT}`));
+adminApp().listen(ADMIN_PORT, BIND, listening(IS_PANEL ? "admin panel" : "admin API", ADMIN_PORT));
 
 // Housekeeping
 recoverOnBoot();

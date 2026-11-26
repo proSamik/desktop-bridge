@@ -5,6 +5,9 @@
 ![MCP](https://img.shields.io/badge/MCP-Streamable%20HTTP-8A2BE2)
 ![Node](https://img.shields.io/badge/node-%E2%89%A520.6-339933)
 
+> 📖 **Full step-by-step guide (with screenshots, and how this compares to Claude Remote Control, Codex remote and computer use):**
+> [How to Run Claude Code and Codex Remotely on Your Computer via Cloudflare Tunnel](https://www.prosamik.com/blogs/run-claude-code-remotely-mcp-cloudflare-tunnel)
+
 **desktop-bridge** is a self-hosted **remote MCP server** that lets an AI agent (Claude on claude.ai, Claude Desktop,
 or any Model Context Protocol client) **remotely control your own computers** by running **Claude Code** (`claude -p`)
 and **OpenAI Codex CLI** (`codex exec`) headless on them: macOS, Linux and Windows.

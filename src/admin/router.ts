@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express, { type Request, type Response, type NextFunction } from "express";
 import { db, now, getSetting, setSetting } from "../db.js";
 import { ROOT, RUNS_DIR, ALLOWED_MCP_PATH, POLICY_PATH, ADMIN_PORT, KC, kcGet, kcSet, IS_PANEL, GUARDED, REMOTES, remoteKeyName, NODE_NAME, PLATFORM_NAME } from "../config.js";
@@ -9,7 +10,9 @@ import { cancelRun, approveAskRun, rejectAskRun, cancelAllRuns, PERMISSION_MODES
 import { MAX_CONCURRENT_ENV } from "../config.js";
 import { pinConfigHashes, fileSha, safeEqual, NOTIFY_BATCH_CHOICES, flushNotifications } from "../util.js";
 
-const PANEL = path.join(ROOT, "src", "admin", "panel.html");
+// The panel ships with the code, not the data dir: resolve it next to this module (dist/admin -> src/admin).
+const PANEL = [path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "admin", "panel.html"), path.join(ROOT, "src", "admin", "panel.html")]
+  .find((p) => fs.existsSync(p)) ?? path.join(ROOT, "src", "admin", "panel.html");
 
 /** Blocks DNS-rebinding: only loopback Host headers. */
 function hostGuard(req: Request, res: Response, next: NextFunction) {
